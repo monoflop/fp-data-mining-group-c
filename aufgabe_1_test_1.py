@@ -16,10 +16,11 @@ from sklearn.svm import SVC
 from sklearn import svm
 
 #neural network
+from sklearn.model_selection import GridSearchCV
 from sklearn.neural_network import MLPClassifier
 
 def dataToNumpy(dataSet):
-    #Datenstruktur so ändern, dass wir pro frame eine Zeile mit 150 Sensordaten erhalten
+    #Datenstruktur so ändern, dass wir pro frame eine Zeile mit 60 Sensordaten erhalten
     #Anzahl Zeilen / 15 = Frames
     frames = len(dataSet.index) / 15
     trainingData = np.zeros((int(frames),60), dtype=np.float64)
@@ -32,6 +33,11 @@ def dataToNumpy(dataSet):
         #trainingData[frame_number][node_index * 10 + 3] = row['gx']
         #trainingData[frame_number][node_index * 10 + 4] = row['gy']
         #trainingData[frame_number][node_index * 10 + 5] = row['gz']
+        #trainingData[frame_number][node_index * 10 + 6] = row['mx']
+        #trainingData[frame_number][node_index * 10 + 7] = row['my']
+        #trainingData[frame_number][node_index * 10 + 8] = row['mz']
+        #trainingData[frame_number][node_index * 10 + 9] = row['r']
+
         trainingData[frame_number][node_index * 4 + 0] = row['mx']
         trainingData[frame_number][node_index * 4 + 1] = row['my']
         trainingData[frame_number][node_index * 4 + 2] = row['mz']
@@ -78,30 +84,58 @@ def prepareTrainingData(dataIndex):
     trainingData = sc.transform(trainingData)
     return trainingData, trainingLabels
 
-def prepareTestData(dataIndex):
-    ##################
-    #Testdaten
-    #Alle nicht Sensordaten entfernen
-    rawDataSet = pd.read_csv("data/test/strip_" + str(dataIndex) + "_test_no_labels.csv", sep=',')
-    X_test = rawDataSet.drop('frame_number',axis = 1)
-    X_test = X_test.drop('strip_id',axis = 1)
-    X_test = X_test.drop('node_id',axis = 1)
-    X_test = X_test.drop('timestamp',axis = 1)
-
-    X_test = X_test.fillna(X_test.mean())
-    testData = dataToNumpy(X_test)
-
-    #Daten einheitlich skalieren von z. B. 0.0 - 1.0
-    sc = StandardScaler()
-    sc.fit(testData)
-    testData = sc.transform(testData)
-    return testData
+def kaggle_score(y_test, predictions):
+    true_positives = 0
+    true_negatives = 0
+    
+    false_positives = 0
+    false_negatives = 0
+    
+    positives = 0
+    negatives = 0
+    
+    for i in range(0,len(y_test)):
+        if y_test[i] == predictions[i]:
+           if y_test[i] == 0:
+               true_negatives+=1
+               negatives+=1
+           else:
+               true_positives+=1
+               positives+=1
+        else:
+            if y_test[i] == 0:
+               false_negatives+=1
+               negatives+=1
+            else:
+               false_positives+=1
+               positives+=1
+    
+    #First and last tow datasets produce only 0
+    #So 
+    
+    if positives == 0:
+        true_positive_ratio = 0
+    else:
+        true_positive_ratio = true_positives / positives
+        
+    if negatives == 0:
+        true_negative_ratio = 0
+    else:
+        true_negative_ratio = true_negatives / negatives
+        
+    ratio = (true_positive_ratio+true_negative_ratio)/2
+    print("True Positive Ratio: ",true_positive_ratio)
+    print("True Negative Ratio: ",true_negative_ratio)
+    print("True Ratio: ", ratio)
+    return ratio
 
 def main():
     print("-----------------------------------------")
     print("TU-Dortmund fp-data-mining-group-c 2020")
     print("Tool to create benchmark results")
     print("-----------------------------------------")
+
+    ratioSum = 0
 
     #Train and predict for all sets
     for x in range(1, 24):
@@ -121,53 +155,44 @@ def main():
             trainingData, trainingLabels = prepareTrainingData(x)
             save(cacheTrainingFile, trainingData)
             save(cacheTrainingLabelFile, trainingLabels)
-
-        #Test data
-        testData = None
-        cacheFile = "cache/test_" + str(x) + ".npy"
-        if os.path.exists(cacheFile):
-            testData = load(cacheFile)
-        else:
-            testData = prepareTestData(x)
-            save(cacheFile, testData)
         
         ##################
         #Training
+        X_train1, X_test1, Y_train1, Y_test1 = train_test_split(trainingData, trainingLabels, test_size=0.20, random_state=42)
+
         #Random Forest
         print("->training", end = '', flush=True)
-        #forest = RandomForestClassifier(n_estimators=200, random_state = 0)
-        #forest.fit(trainingData, trainingLabels)
+        forest = RandomForestClassifier(n_estimators=200, random_state = 0)
+        forest.fit(X_train1, Y_train1)
 
-        #SVM
-        #SVM does not work on the first set because it only has zero labels
-        #clf = svm.SVC()
-        #clf.fit(trainingData, trainingLabels)
-
-        #Neural network
+        #MLP
         mlpc=MLPClassifier()
-        mlpc.fit(trainingData, trainingLabels)
+        mlpc.fit(X_train1, Y_train1)
+
+
+        #mlp = MLPClassifier(max_iter=200, random_state = 0)
+        #parameter_space = {
+        #    'hidden_layer_sizes': [(50,50,50), (50,100,50), (100,)],
+        #    'activation': ['tanh', 'relu'],
+        #    'solver': ['sgd', 'adam'],
+        #    'alpha': [0.0001, 0.05],
+        #    'learning_rate': ['constant','adaptive'],
+        #}
+        #clf = GridSearchCV(mlp, parameter_space, n_jobs=-1, cv=3)
+        #clf.fit(X_train1, Y_train1)
 
         ##################
         #Prediction
-        print("->predicting", end = '', flush=True)
-        prediction = mlpc.predict(testData)
+        print("Predicting")
+        prediction = mlpc.predict(X_test1)
+        #print(classification_report(Y_test1, prediction))
+        score = kaggle_score(Y_test1, prediction)
+        print("Kaggle_score " + str(score))
+        ratioSum = ratioSum + score
 
-        print("->done", flush=True)
+    ratioSum = ratioSum / 23
+    print("Final score " + str(ratioSum))
 
-        f = open("data.csv", "a")
-        if x == 1:
-            f = open("data.csv", "w")
-            f.write("Id,Predicted\n")
-
-        count = 3412 * (x - 1)
-        for a in prediction:
-            f.write(str(count))
-            f.write(",")
-            f.write(str(int(a)))
-            f.write("\n")
-            count = count + 1 
-        f.close()
-        #break
 
 if __name__ == "__main__":
     main()
