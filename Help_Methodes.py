@@ -1,20 +1,19 @@
-with open('data(2).csv', 'r') as t1, open('fileSubmission222.csv', 'r') as t2:
-    fileone = t1.readlines()
-    filetwo = t2.readlines()
-
-count = 0
-with open('update.csv', 'w') as outFile:
-    for line in filetwo:
-        if line not in fileone:
-            count +=1
-            outFile.write(line)
-    print(count)
-
-import pandas as pd
-df = pd.read_csv('data(2).csv')
-df['Predicted'].value_counts()
-
-import pandas as pd
+# with open('data(2).csv', 'r') as t1, open('fileSubmission222.csv', 'r') as t2:
+#     fileone = t1.readlines()
+#     filetwo = t2.readlines()
+#
+# count = 0
+# with open('update.csv', 'w') as outFile:
+#     for line in filetwo:
+#         if line not in fileone:
+#             count +=1
+#             outFile.write(line)
+#     print(count)
+#
+# import pandas as pd
+# df = pd.read_csv('data(2).csv')
+# df['Predicted'].value_counts()
+import  pandas as pd
 
 
 def Load_strip_train(number):

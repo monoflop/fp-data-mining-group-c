@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from imblearn.over_sampling import SMOTE
 from numpy import asarray
 from numpy import save
 from numpy import load
@@ -23,13 +24,33 @@ from sklearn.metrics import auc
 # neural network
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import balanced_accuracy_score
+from sklearn.datasets import  make_classification
 
 
 def Load_strip_train(number):
-    strip_train = pd.read_csv('/Users/othx30/data/train/strip_' + str(number) + '_train.csv', sep=',')
+    if number == 1 or number == 22 or number == 23:
+        # Read target dataset
+        strip_train = pd.read_csv('/Users/othx30/data/train/strip_' + str(number) + '_train.csv', sep=',')
+
+        # Drop first 15 rows
+        strip_train = strip_train.iloc[1500:]
+
+        # Read data frame with near value of 1.0
+        strip_trainNear = pd.read_csv('/Users/othx30/data/train/strip_2_train.csv', sep=',')
+        strip_trainNear = strip_trainNear.iloc[:1500]
+
+        # Insert first frame into target dataset
+        strip_train = pd.concat([strip_trainNear, strip_train]).reset_index(drop=True)
+        #print(strip_train['near'].head(30))
+
+    else :
+
+        strip_train = pd.read_csv('/Users/othx30/data/train/strip_' + str(number) + '_train.csv', sep=',')
+
     strip_train['r'] = strip_train['r'].fillna(strip_train['r'].mean())
     # strip_train = strip_train.groupby(['frame_number', 'run_number'])
     parameters = ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'mx', 'my', 'mz', 'r']
+
     counter = 0
     for i, row in strip_train.groupby(['frame_number', 'run_number']):
         if (counter == 0):
@@ -49,11 +70,12 @@ def Load_strip_train(number):
 
         counter += 1
 
+
     return [trainingData, trainingLabels]
 
 
 def Load_strip_test(number):
-    strip_test = pd.read_csv("/Users/othx30/data/test/strip_" + str(number) + "_test_no_labels.csv", sep=',')
+    strip_test = pd.read_csv('/Users/othx30/data/test/strip_' + str(number) + '_test_no_labels.csv', sep=',')
     strip_test = strip_test.fillna(strip_test.mean())
     parameters = ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'mx', 'my', 'mz', 'r']
     counter = 0
@@ -107,8 +129,17 @@ def main():
             testData = Load_strip_test(x)
             save(cacheFile, testData)
 
+        # Generate datasets
+       # trainingData , trainingLabels = make_classification(n_classes= 2 , weights=[0.1,0.9])
+
+        # transform the dataset
+        oversample = SMOTE(k_neighbors=2)
+        Smote_X_train1, Smote_Y_train1 = oversample.fit_resample(trainingData, trainingLabels)
+
+        #Split the data
         X_train1, X_test1, Y_train1, Y_test1 = train_test_split(trainingData, trainingLabels, test_size=0.30,
                                                                 random_state=42)
+
 
         pca = PCA(n_components=4, svd_solver='auto')
 
@@ -125,10 +156,10 @@ def main():
         print("->training", end='', flush=True)
         # forest = RandomForestClassifier(n_estimators=200, random_state=0)
         # forest.fit(X_train1, Y_train1)
-        pipeline.fit(X_train1, Y_train1)
+        pipeline.fit(Smote_X_train1, Smote_Y_train1)
 
-        print('Training score: {}'.format(pipeline.score(X_train1, Y_train1)))
-        print('Test score: {}'.format(pipeline.score(X_test1, Y_test1)))
+        print('Training score: {}'.format(pipeline.score(Smote_X_train1, Smote_Y_train1)))
+        print('Test score: {}'.format(pipeline.score(Smote_X_train1, Smote_Y_train1)))
 
         ##################
         # Prediction
