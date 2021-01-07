@@ -28,7 +28,7 @@ from sklearn.datasets import  make_classification
 
 
 def Load_strip_train(number):
-    if number == 1 or number == 22 or number == 23:
+    if number == 1 or number == 22:
         # Read target dataset
         strip_train = pd.read_csv('/Users/othx30/data/train/strip_' + str(number) + '_train.csv', sep=',')
 
@@ -42,6 +42,22 @@ def Load_strip_train(number):
         # Insert first frame into target dataset
         strip_train = pd.concat([strip_trainNear, strip_train]).reset_index(drop=True)
         #print(strip_train['near'].head(30))
+    elif number == 23:
+        # Read target dataset
+        strip_train = pd.read_csv('/Users/othx30/data/train/strip_' + str(number) + '_train.csv', sep=',')
+
+        # Drop first 15 rows
+        strip_train = strip_train.iloc[20000:]
+
+        # Read data frame with near value of 1.0
+        strip_trainNear = pd.read_csv('/Users/othx30/data/train/strip_20_train.csv', sep=',')
+        strip_trainNear = strip_trainNear.iloc[:20000]
+
+        # Insert first frame into target dataset
+        strip_train = pd.concat([strip_trainNear, strip_train]).reset_index(drop=True)
+        #print(strip_train['near' == 1].head(10))
+        print(strip_train['near'].value_counts())
+
 
     else :
 
