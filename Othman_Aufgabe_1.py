@@ -1,5 +1,4 @@
-
-# from imblearn.over_sampling import SMOTE
+#from imblearn.over_sampling import SMOTE
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,24 +8,28 @@ from numpy import save
 from numpy import load
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, balanced_accuracy_score
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
-# svm
+from sklearn.model_selection import GridSearchCV
+#svm
 from sklearn.svm import SVC
 from sklearn import svm
-from sklearn.metrics import roc_curve
-from sklearn.metrics import auc
-# neural network
+
+#neural network
 from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import balanced_accuracy_score
+from sklearn.model_selection import KFold
+
+import warnings
+from sklearn.exceptions import DataConversionWarning
+warnings.filterwarnings(action='ignore', category=DataConversionWarning)
 
 
 def Load_strip_train(number):
-    strip_train = pd.read_csv('/Users/othx30/data/train/strip_' + str(number) + '_train.csv', sep=',')
+    strip_train = pd.read_csv('/Users/othx30/PycharmProjects/fp-data-mining-group-c/data/train/strip_' + str(number) + '_train.csv', sep=',')
     strip_train['r'] = strip_train['r'].fillna(strip_train['r'].mean())
     # strip_train = strip_train.groupby(['frame_number', 'run_number'])
     parameters = ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'mx', 'my', 'mz', 'r']
@@ -53,7 +56,7 @@ def Load_strip_train(number):
 
 
 def Load_strip_test(number):
-    strip_test = pd.read_csv("/Users/othx30/data/test/strip_" + str(number) + "_test_no_labels.csv", sep=',')
+    strip_test = pd.read_csv("/Users/othx30/PycharmProjects/fp-data-mining-group-c/data/test/strip_" + str(number) + "_test_no_labels.csv", sep=',')
     strip_test = strip_test.fillna(strip_test.mean())
     parameters = ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'mx', 'my', 'mz', 'r']
     counter = 0
@@ -65,7 +68,7 @@ def Load_strip_test(number):
             # determine number of frames
             size = round(len(strip_test) / length)
             print("Length is: %s" % size)
-        testData = np.empty((size, length * len(parameters)))
+        testData = np.empty((size, length*len(parameters)))
         testData[counter,] = np.concatenate(row.filter(items=parameters).to_numpy())
         counter += 1
 
@@ -78,95 +81,105 @@ def main():
     print("Tool to create benchmark results")
     print("-----------------------------------------")
 
+
+
     # Train and predict for all sets
     for x in range(1, 24):
 
-        print("DataSet " + str(x) + " | Preparing", end='', flush=True)
+                print("DataSet " + str(x) + " | Preparing", end='', flush=True)
 
-        ##################
-        # Numpy array caching
-        # Training data
-        trainingData = None
-        trainingLabels = None
-        cacheTrainingFile = "cache/train_" + str(x) + ".npy"
-        cacheTrainingLabelFile = "cache/train_label_" + str(x) + ".npy"
-        if os.path.exists(cacheTrainingFile):
-            trainingData = load(cacheTrainingFile)
-            trainingLabels = load(cacheTrainingLabelFile)
-        else:
-            trainingData, trainingLabels = Load_strip_train(x)
-            save(cacheTrainingFile, trainingData)
-            save(cacheTrainingLabelFile, trainingLabels)
+                ##################
+                # Numpy array caching
+                # Training data
+                trainingData = None
+                trainingLabels = None
+                cacheTrainingFile = "cache/train_" + str(x) + ".npy"
+                cacheTrainingLabelFile = "cache/train_label_" + str(x) + ".npy"
+                if os.path.exists(cacheTrainingFile):
+                    trainingData = load(cacheTrainingFile)
+                    trainingLabels = load(cacheTrainingLabelFile)
+                else:
+                    trainingData, trainingLabels = Load_strip_train(x)
+                    save(cacheTrainingFile, trainingData)
+                    save(cacheTrainingLabelFile, trainingLabels)
 
-        # Test data
-        testData = None
-        cacheFile = "cache/test_" + str(x) + ".npy"
-        if os.path.exists(cacheFile):
-            testData = load(cacheFile, allow_pickle=True)
-        else:
-            testData = Load_strip_test(x)
-            save(cacheFile, testData)
+                # Test data
+                testData = None
+                cacheFile = "cache/test_" + str(x) + ".npy"
+                if os.path.exists(cacheFile):
+                    testData = load(cacheFile, allow_pickle=True)
+                else:
+                    testData = Load_strip_test(x)
+                    save(cacheFile, testData)
 
-        X_train1, X_test1, Y_train1, Y_test1 = train_test_split(trainingData, trainingLabels, test_size=0.30,
-                                                                random_state=42)
+                # KFold Splitting data
+                k = 5
+                kf = KFold(n_splits=k, random_state=42, shuffle=True)
+                curr_fold = 0
+                acc_list = []
 
-        pca = PCA(n_components=4, svd_solver='auto')
+                for train_index, test_index in kf.split(trainingData):
 
-        steps = [('pca', pca),
-                 ('scalar', StandardScaler()),
-                 ('poly', PolynomialFeatures(degree=2)),
-                 ('model', RandomForestClassifier(criterion='gini', random_state=42, n_jobs=2))
-                 ]
-
-        pipeline = Pipeline(steps)
-        ##################
-        # Training
-        # Random Forest
-        print("->training", end='', flush=True)
-        # forest = RandomForestClassifier(n_estimators=200, random_state=0)
-        # forest.fit(X_train1, Y_train1)
-        pipeline.fit(X_train1, Y_train1)
-
-        print('Training score: {}'.format(pipeline.score(X_train1, Y_train1)))
-        print('Test score: {}'.format(pipeline.score(X_test1, Y_test1)))
-
-        ##################
-        # Prediction
-        print("->predicting", end='', flush=True)
-        prediction = pipeline.predict(X_test1)
-
-        print("Accuracy " + str(pipeline.score(X_test1, Y_test1)))
-        print(classification_report(Y_test1, prediction))
-
-        # Calculating Area Under the Curve :
-
-        fprValue2, tprValue2, thresholdsValue2 = roc_curve(Y_test1, prediction)
-        AUCValue = auc(fprValue2, tprValue2)
-        print('AUC Value  : ', AUCValue)
-
-        # Calculatin Balanced accuracy
-        balanced_Value = balanced_accuracy_score(Y_test1, prediction)
-        print(' balanced accuracy : ', balanced_Value)
-
-        forest_prediction = pipeline.predict(testData)
-
-        print("->done", flush=True)
-
-        f = open("fileSubmission111.csv", "a")
-        if x == 1:
-            f = open("fileSubmission111.csv", "w")
-            f.write("Id,Predicted\n")
-
-        count = 3412 * (x - 1)
-        for a in forest_prediction:
-            f.write(str(count))
-            f.write(",")
-            f.write(str(int(a)))
-            f.write("\n")
-            count = count + 1
-        f.close()
-        # break
+                    X_train,X_test = trainingData[train_index],trainingData[test_index]
+                    Y_train, Y_test = trainingLabels[train_index], trainingLabels[test_index]
 
 
+
+                    pca = PCA()
+
+                    steps = [('pca', pca),
+                             ('scalar', StandardScaler()),
+                             ('poly', PolynomialFeatures()),
+                             ('model', RandomForestClassifier(n_estimators=100, max_depth=1, random_state=42))
+                             ]
+
+                    pipeline = Pipeline(steps)
+                    ##################
+                    # Training
+                    # Random Forest
+                    print("->training", end='', flush=True)
+                    # forest = RandomForestClassifier(n_estimators=200, random_state=0)
+                    # forest.fit(X_train1, Y_train1)
+                    param_grid = {'pca__n_components': [1, 2, 4, 7, 9],
+                                  'model__criterion': ['gini', 'entropy'],
+                                  'poly__degree': [2, 3, 4, 5], }
+
+                    search = GridSearchCV(pipeline, param_grid, cv=5, return_train_score=False)
+
+                    search.fit(X_train, Y_train)
+
+                    predicted = search.predict(X_test)
+
+                    # Compute accuracy
+                    #acc = accuracy_score(trainingData[test_index], predicted)
+                    # Calculatin Balanced accuracy
+                    acc = balanced_accuracy_score(Y_test, predicted)
+                    acc_list.append(acc)
+                print("Average Accuracy " + str(sum(acc_list)/k))
+
+                forest_prediction = search.predict(testData)
+
+                print("->done", flush=True)
+
+                f = open("fileSubmission222.csv", "a")
+                if x == 1:
+                    f = open("fileSubmission222.csv", "w")
+                    f.write("Id,Predicted\n")
+
+                count = 3412 * (x - 1)
+                for a in forest_prediction:
+                    f.write(str(count))
+                    f.write(",")
+                    f.write(str(int(a)))
+                    f.write("\n")
+                    count = count + 1
+                f.close()
+                # break
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
