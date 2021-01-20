@@ -9,7 +9,9 @@ from numpy import load
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
+import pickle
 
 #svm
 from sklearn.svm import SVC
@@ -22,20 +24,20 @@ def dataToNumpy(dataSet):
     #Datenstruktur so ändern, dass wir pro frame eine Zeile mit 150 Sensordaten erhalten
     #Anzahl Zeilen / 15 = Frames
     frames = len(dataSet.index) / 15
-    trainingData = np.zeros((int(frames),60), dtype=np.float64)
+    trainingData = np.zeros((int(frames),150), dtype=np.float64)
     frame_number = 0
     node_index = 0
     for i, row in dataSet.iterrows():
-        #trainingData[frame_number][node_index * 10 + 0] = row['ax']
-        #trainingData[frame_number][node_index * 10 + 1] = row['ay']
-        #trainingData[frame_number][node_index * 10 + 2] = row['az']
-        #trainingData[frame_number][node_index * 10 + 3] = row['gx']
-        #trainingData[frame_number][node_index * 10 + 4] = row['gy']
-        #trainingData[frame_number][node_index * 10 + 5] = row['gz']
-        trainingData[frame_number][node_index * 4 + 0] = row['mx']
-        trainingData[frame_number][node_index * 4 + 1] = row['my']
-        trainingData[frame_number][node_index * 4 + 2] = row['mz']
-        trainingData[frame_number][node_index * 4 + 3] = row['r']
+        trainingData[frame_number][node_index * 10 + 0] = row['ax']
+        trainingData[frame_number][node_index * 10 + 1] = row['ay']
+        trainingData[frame_number][node_index * 10 + 2] = row['az']
+        trainingData[frame_number][node_index * 10 + 3] = row['gx']
+        trainingData[frame_number][node_index * 10 + 4] = row['gy']
+        trainingData[frame_number][node_index * 10 + 5] = row['gz']
+        trainingData[frame_number][node_index * 10 + 6] = row['mx']
+        trainingData[frame_number][node_index * 10 + 7] = row['my']
+        trainingData[frame_number][node_index * 10 + 8] = row['mz']
+        trainingData[frame_number][node_index * 10 + 9] = row['r']
         node_index = node_index + 1
         if(node_index >= 15):
             frame_number = frame_number + 1
@@ -72,10 +74,19 @@ def prepareTrainingData(dataIndex):
         if(i % 15 == 0):
             trainingLabels[int(i / 15)] = int(number)
             
-    #Daten einheitlich skalieren von z. B. 0.0 - 1.0
-    sc = StandardScaler()
-    sc.fit(trainingData)
-    trainingData = sc.transform(trainingData)
+    #Daten einheitlich skalieren
+    #StandardScaler
+    #Base result 0.9430854964979385
+    scaler = StandardScaler()
+    scaler.fit(trainingData)
+    trainingData = scaler.transform(trainingData)
+
+    #MinMaxScaler
+    #Base result 0.9567132739159989
+    #scaler = MinMaxScaler()
+    #scaler.fit(trainingData)
+    #trainingData = scaler.transform(trainingData)
+
     return trainingData, trainingLabels
 
 def prepareTestData(dataIndex):
@@ -91,11 +102,38 @@ def prepareTestData(dataIndex):
     X_test = X_test.fillna(X_test.mean())
     testData = dataToNumpy(X_test)
 
-    #Daten einheitlich skalieren von z. B. 0.0 - 1.0
-    sc = StandardScaler()
-    sc.fit(testData)
-    testData = sc.transform(testData)
+    #Daten einheitlich skalieren
+    #StandardScaler
+    scaler = StandardScaler()
+    scaler.fit(testData)
+    testData = scaler.transform(testData)
+
+    #MinMaxScaler
+    #scaler = MinMaxScaler()
+    #scaler.fit(testData)
+    #testData = scaler.transform(testData)
+
     return testData
+
+def savePrediction(prediction, run):
+    f = open("data.csv", "a")
+    if run == 1:
+        f = open("data.csv", "w")
+        f.write("Id,Predicted\n")
+
+    count = 3412 * (run - 1)
+    for a in prediction:
+        f.write(str(count))
+        f.write(",")
+        f.write(str(int(a)))
+        f.write("\n")
+        count = count + 1 
+    f.close()
+
+def saveModel(model, run):
+    f = open("model/model_" + str(run) + ".bin", "wb")
+    f.write(model)
+    f.close()
 
 def main():
     print("-----------------------------------------")
@@ -105,6 +143,15 @@ def main():
 
     #Train and predict for all sets
     for x in range(1, 24):
+
+        #TODO test
+        if x == 1 or x == 22 or x == 23:
+            print("DataSet " + str(x) + " | Skip zero dataset")
+            #Write empty prediction
+            prediction = [0] * 3412
+            savePrediction(prediction, x)
+            continue
+
         print("DataSet " + str(x) + " | Preparing", end = '', flush=True)
 
         ##################
@@ -135,39 +182,30 @@ def main():
         #Training
         #Random Forest
         print("->training", end = '', flush=True)
-        #forest = RandomForestClassifier(n_estimators=200, random_state = 0)
-        #forest.fit(trainingData, trainingLabels)
+        model = RandomForestClassifier(n_estimators=200, random_state = 0)
+        model.fit(trainingData, trainingLabels)
 
         #SVM
-        #SVM does not work on the first set because it only has zero labels
-        #clf = svm.SVC()
-        #clf.fit(trainingData, trainingLabels)
+        #model = svm.SVC()
+        #model.fit(trainingData, trainingLabels)
 
         #Neural network
-        mlpc=MLPClassifier()
-        mlpc.fit(trainingData, trainingLabels)
+        #model=MLPClassifier()
+        #model.fit(trainingData, trainingLabels)
 
         ##################
         #Prediction
         print("->predicting", end = '', flush=True)
-        prediction = mlpc.predict(testData)
+        prediction = model.predict(testData)
+
+        #Save model
+        print("->saving", end = '', flush=True)
+        s = pickle.dumps(model)
+        saveModel(s, x)
 
         print("->done", flush=True)
 
-        f = open("data.csv", "a")
-        if x == 1:
-            f = open("data.csv", "w")
-            f.write("Id,Predicted\n")
-
-        count = 3412 * (x - 1)
-        for a in prediction:
-            f.write(str(count))
-            f.write(",")
-            f.write(str(int(a)))
-            f.write("\n")
-            count = count + 1 
-        f.close()
-        #break
+        savePrediction(prediction, x)
 
 if __name__ == "__main__":
     main()

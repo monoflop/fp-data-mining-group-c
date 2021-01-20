@@ -7,9 +7,11 @@ from numpy import asarray
 from numpy import save
 from numpy import load
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
 
 #svm
 from sklearn.svm import SVC
@@ -23,25 +25,20 @@ def dataToNumpy(dataSet):
     #Datenstruktur so ändern, dass wir pro frame eine Zeile mit 60 Sensordaten erhalten
     #Anzahl Zeilen / 15 = Frames
     frames = len(dataSet.index) / 15
-    trainingData = np.zeros((int(frames),60), dtype=np.float64)
+    trainingData = np.zeros((int(frames),150), dtype=np.float64)
     frame_number = 0
     node_index = 0
     for i, row in dataSet.iterrows():
-        #trainingData[frame_number][node_index * 10 + 0] = row['ax']
-        #trainingData[frame_number][node_index * 10 + 1] = row['ay']
-        #trainingData[frame_number][node_index * 10 + 2] = row['az']
-        #trainingData[frame_number][node_index * 10 + 3] = row['gx']
-        #trainingData[frame_number][node_index * 10 + 4] = row['gy']
-        #trainingData[frame_number][node_index * 10 + 5] = row['gz']
-        #trainingData[frame_number][node_index * 10 + 6] = row['mx']
-        #trainingData[frame_number][node_index * 10 + 7] = row['my']
-        #trainingData[frame_number][node_index * 10 + 8] = row['mz']
-        #trainingData[frame_number][node_index * 10 + 9] = row['r']
-
-        trainingData[frame_number][node_index * 4 + 0] = row['mx']
-        trainingData[frame_number][node_index * 4 + 1] = row['my']
-        trainingData[frame_number][node_index * 4 + 2] = row['mz']
-        trainingData[frame_number][node_index * 4 + 3] = row['r']
+        trainingData[frame_number][node_index * 10 + 0] = row['ax']
+        trainingData[frame_number][node_index * 10 + 1] = row['ay']
+        trainingData[frame_number][node_index * 10 + 2] = row['az']
+        trainingData[frame_number][node_index * 10 + 3] = row['gx']
+        trainingData[frame_number][node_index * 10 + 4] = row['gy']
+        trainingData[frame_number][node_index * 10 + 5] = row['gz']
+        trainingData[frame_number][node_index * 10 + 6] = row['mx']
+        trainingData[frame_number][node_index * 10 + 7] = row['my']
+        trainingData[frame_number][node_index * 10 + 8] = row['mz']
+        trainingData[frame_number][node_index * 10 + 9] = row['r']
         node_index = node_index + 1
         if(node_index >= 15):
             frame_number = frame_number + 1
@@ -53,6 +50,7 @@ def prepareTrainingData(dataIndex):
     #Trainingsdaten
     #Label aus Datensatz entfernen, damit wir einen Label-Satz und einen Feature-Satz erhalten.
     rawDataSet = pd.read_csv("data/train/strip_" + str(dataIndex) + "_train.csv", sep=',')
+
     X_train = rawDataSet.drop('near',axis = 1)
     Y_train = rawDataSet['near']
 
@@ -78,56 +76,20 @@ def prepareTrainingData(dataIndex):
         if(i % 15 == 0):
             trainingLabels[int(i / 15)] = int(number)
             
-    #Daten einheitlich skalieren von z. B. 0.0 - 1.0
+    #Daten einheitlich skalieren
+    #StandardScaler
+    #Base result 0.9430854964979385
     sc = StandardScaler()
     sc.fit(trainingData)
     trainingData = sc.transform(trainingData)
-    return trainingData, trainingLabels
 
-def kaggle_score(y_test, predictions):
-    true_positives = 0
-    true_negatives = 0
-    
-    false_positives = 0
-    false_negatives = 0
-    
-    positives = 0
-    negatives = 0
-    
-    for i in range(0,len(y_test)):
-        if y_test[i] == predictions[i]:
-           if y_test[i] == 0:
-               true_negatives+=1
-               negatives+=1
-           else:
-               true_positives+=1
-               positives+=1
-        else:
-            if y_test[i] == 0:
-               false_negatives+=1
-               negatives+=1
-            else:
-               false_positives+=1
-               positives+=1
-    
-    #First and last tow datasets produce only 0
-    #So 
-    
-    if positives == 0:
-        true_positive_ratio = 0
-    else:
-        true_positive_ratio = true_positives / positives
-        
-    if negatives == 0:
-        true_negative_ratio = 0
-    else:
-        true_negative_ratio = true_negatives / negatives
-        
-    ratio = (true_positive_ratio+true_negative_ratio)/2
-    print("True Positive Ratio: ",true_positive_ratio)
-    print("True Negative Ratio: ",true_negative_ratio)
-    print("True Ratio: ", ratio)
-    return ratio
+    #MinMaxScaler
+    #Base result 0.9567132739159989
+    #sc = MinMaxScaler()
+    #sc.fit(trainingData)
+    #trainingData = sc.transform(trainingData)
+
+    return trainingData, trainingLabels
 
 def main():
     print("-----------------------------------------")
@@ -139,6 +101,15 @@ def main():
 
     #Train and predict for all sets
     for x in range(1, 24):
+        
+        ##################
+        #Skip training for datasets
+        #with only zeros. Because result is always zero.
+        if x == 1 or x == 22 or x == 23:
+            print("DataSet " + str(x) + " | Skip zero dataset")
+            ratioSum = ratioSum + 1
+            continue
+
         print("DataSet " + str(x) + " | Preparing", end = '', flush=True)
 
         ##################
@@ -156,9 +127,12 @@ def main():
             save(cacheTrainingFile, trainingData)
             save(cacheTrainingLabelFile, trainingLabels)
         
+        
+
         ##################
         #Training
-        X_train1, X_test1, Y_train1, Y_test1 = train_test_split(trainingData, trainingLabels, test_size=0.20, random_state=42)
+        #stratify=trainingLabels equal split of lables in traning and test data
+        X_train1, X_test1, Y_train1, Y_test1 = train_test_split(trainingData, trainingLabels, test_size=0.05, stratify=trainingLabels)
 
         #Random Forest
         print("->training", end = '', flush=True)
@@ -166,8 +140,8 @@ def main():
         forest.fit(X_train1, Y_train1)
 
         #MLP
-        mlpc=MLPClassifier()
-        mlpc.fit(X_train1, Y_train1)
+        #mlpc=MLPClassifier(hidden_layer_sizes=(64,64,64),activation="relu" ,random_state=1, max_iter=2000)
+        #mlpc.fit(X_train1, Y_train1)
 
 
         #mlp = MLPClassifier(max_iter=200, random_state = 0)
@@ -183,11 +157,20 @@ def main():
 
         ##################
         #Prediction
-        print("Predicting")
-        prediction = mlpc.predict(X_test1)
+        print("->predicting")
+        prediction = forest.predict(X_test1)
+
+        #Kaggle score
+        #score = kaggle_score(Y_test1, prediction)
+        #print("Kaggle_score " + str(score))
+
+        #Roc score
+        score = roc_auc_score(Y_test1, prediction)
+        print("Roc " + str(score))
+
+        #Report
         #print(classification_report(Y_test1, prediction))
-        score = kaggle_score(Y_test1, prediction)
-        print("Kaggle_score " + str(score))
+        
         ratioSum = ratioSum + score
 
     ratioSum = ratioSum / 23
