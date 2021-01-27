@@ -68,11 +68,25 @@ def prepareTestData(dataIndex):
 
     return testData
 
-def readModel(run):
+def readClassificationModel(run):
     f = open("classification_model/model_" + str(run) + ".bin", "rb")
     model = pickle.load(f)
     f.close()
     return model
+
+def readRegressionModel(run):
+    f = open("regression_model/model_" + str(run) + ".bin", "rb")
+    model = pickle.load(f)
+    f.close()
+    return model
+
+def savePrediction(prediction):
+    f = open("data.csv", "w")
+    f.write("vicon_x,vicon_y,frame_number\n")
+    for frame in range(0, 3412):
+        f.write("" + str(prediction[frame][0]) + ", " + str(prediction[frame][1]) + ", " + str(frame) + "\n")
+
+    f.close()
 
 def main():
     print("-----------------------------------------")
@@ -120,12 +134,27 @@ def main():
             print("CModel " + str(x) + " | Skip zero model")
             continue
         
-        testClassificationModels[x] = readModel(x)
+        testClassificationModels[x] = readClassificationModel(x)
         print("CModel " + str(x) + " | Loaded model")
 
+    ##################
+    #Load regression models
+    testRegressionModels = [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None]
+
+    print("Loading regression models")
+    for x in range(1, 24):
+        #Skip test for datasets
+        #with only zeros. Because result is always zero.
+        if x == 1 or x == 22 or x == 23:
+            print("RModel " + str(x) + " | Skip zero model")
+            continue
+        
+        testRegressionModels[x] = readRegressionModel(x)
+        print("RModel " + str(x) + " | Loaded model")
 
     ##################
-    #Iterate over all frames
+    #Iterate over all frames and create prediction
+    positionPrediction = np.zeros((int(3412),2), dtype=np.float64)
     for frame in range(0, 3412):
 
         #Prediction is stored as an array
@@ -148,10 +177,49 @@ def main():
             prediction = targetModel.predict([targetFrameData])
             framePrediction[strip - 1] = prediction[0]
         
-        print("Predicted for frame {:04d}".format(frame) + " \t" + str(framePrediction))
+        print("Predicted for frame {:04d}".format(frame) + " \t" + str(framePrediction), end = '', flush=True)
 
-    
+        #Check which prediction case we have
+        #Case 1 : Only one positive prediction
+        #Case 2 : No positive prediction
+        #Case 3 : Multiple positive predictions
 
+        positiveCount = np.count_nonzero(framePrediction == 1)
+        if positiveCount == 1:
+            #Case 1
+            #Predict position with regressor on only one strip
+            print(" case 1", end = '', flush=True)
+            targetStripIndices = np.where(framePrediction == 1)
+
+            #+1 because array index 0 is strip 1
+            targetStripIndex = (int(targetStripIndices[0][0])) + 1
+
+            targetModel = testRegressionModels[targetStripIndex]
+            targetFrameData = testDataSets[targetStripIndex][frame]
+            prediction = targetModel.predict([targetFrameData])
+
+            #Store prediction
+            positionPrediction[frame][0] = prediction[0][0]
+            positionPrediction[frame][1] = prediction[0][1]
+
+            print(" predicted " + str(positionPrediction[frame]))
+
+        elif positiveCount == 0:
+            #Case 2
+            print(" case 2", end = '', flush=True)
+            #TODO just use prev prediction
+            positionPrediction[frame][0] = positionPrediction[frame - 1][0]
+            positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+            print(" predicted " + str(positionPrediction[frame]))
+        elif positiveCount > 1:
+            #Case 3
+            print(" case 3", end = '', flush=True)
+            #TODO just use prev prediction
+            positionPrediction[frame][0] = positionPrediction[frame - 1][0]
+            positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+            print(" predicted " + str(positionPrediction[frame]))
+
+    savePrediction(positionPrediction)
 
 
 if __name__ == "__main__":
