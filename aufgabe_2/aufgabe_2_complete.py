@@ -155,6 +155,10 @@ def main():
     ##################
     #Iterate over all frames and create prediction
     positionPrediction = np.zeros((int(3412),2), dtype=np.float64)
+    lastPositiveStrip = None
+    predictedCaseOne = 0
+    predictedCaseTwo = 0
+    predictedCaseThree = 0
     for frame in range(0, 3412):
 
         #Prediction is stored as an array
@@ -176,7 +180,7 @@ def main():
             #Create prediction for frame
             prediction = targetModel.predict([targetFrameData])
             framePrediction[strip - 1] = prediction[0]
-        
+
         print("Predicted for frame {:04d}".format(frame) + " \t" + str(framePrediction), end = '', flush=True)
 
         #Check which prediction case we have
@@ -187,13 +191,24 @@ def main():
         positiveCount = np.count_nonzero(framePrediction == 1)
         if positiveCount == 1:
             #Case 1
-            #Check if position is realistic
             #Predict position with regressor on only one strip
             print(" case 1", end = '', flush=True)
             targetStripIndices = np.where(framePrediction == 1)
 
             #+1 because array index 0 is strip 1
             targetStripIndex = (int(targetStripIndices[0][0])) + 1
+
+            #Check if position is realistic
+            if lastPositiveStrip is not None:
+                diff = abs(lastPositiveStrip - targetStripIndex)
+                if diff >= 3: 
+                    #Position is unrealistic
+                    positionPrediction[frame][0] = positionPrediction[frame - 1][0]
+                    positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+                    print(" predicted " + str(positionPrediction[frame]))
+                    lastPositiveStrip = None
+                    predictedCaseOne = predictedCaseOne + 1
+                    continue
 
             targetModel = testRegressionModels[targetStripIndex]
             targetFrameData = testDataSets[targetStripIndex][frame]
@@ -205,6 +220,10 @@ def main():
 
             print(" predicted " + str(positionPrediction[frame]))
 
+            lastPositiveStrip = targetStripIndex
+
+            predictedCaseOne = predictedCaseOne + 1
+
         elif positiveCount == 0:
             #Case 2
             print(" case 2", end = '', flush=True)
@@ -212,39 +231,90 @@ def main():
 
             #Predict next frame and calculate mean
 
-            positionPrediction[frame][0] = positionPrediction[frame - 1][0]
-            positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+            #Write zero and calculate mean later
+            #positionPrediction[frame][0] = positionPrediction[frame - 1][0]
+            #positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+
+            positionPrediction[frame][0] = 0
+            positionPrediction[frame][1] = 0
+
             print(" predicted " + str(positionPrediction[frame]))
+
+            lastPositiveStrip = None
+
+            predictedCaseTwo = predictedCaseTwo + 1
         elif positiveCount > 1:
             #Case 3
             print(" case 3", end = '', flush=True)
 
-            #If the predictions are far apart, we only use the prediction that is closer to prev prediction
-            #TODO
-
-            #Predict for all positive results and calculate mean.
             targetStripIndices = np.where(framePrediction == 1)
-            finalPrediction = np.zeros((2), dtype=np.float64)
+
+            #If the predictions are far apart, we only use the prediction that is closer to prev prediction
+            #Sort desceding
+            targetStripIndices[0][::-1].sort()
+            diff = targetStripIndices[0][0] + targetStripIndices[0][0]
             for arrayIndex in range(len(targetStripIndices[0])):
                 #print("index " + str(targetStripIndices[0][arrayIndex]))
+                diff = diff - targetStripIndices[0][arrayIndex]
 
-                targetStripIndex = (int(targetStripIndices[0][arrayIndex])) + 1
+            diff = abs(diff)
 
-                targetModel = testRegressionModels[targetStripIndex]
-                targetFrameData = testDataSets[targetStripIndex][frame]
-                prediction = targetModel.predict([targetFrameData])
+            print(" diff " + str(diff), end = '', flush=True)
 
-                #Store prediction
-                finalPrediction[0] = finalPrediction[0] + prediction[0][0]
-                finalPrediction[1] = finalPrediction[1] + prediction[0][1]
+            #Predict for all positive results and calculate mean
+            if diff <= 2:
+                
+                finalPrediction = np.zeros((2), dtype=np.float64)
+                for arrayIndex in range(len(targetStripIndices[0])):
+                    targetStripIndex = (int(targetStripIndices[0][arrayIndex])) + 1
 
-            #Calulate mean value
-            finalPrediction[0] = finalPrediction[0] / positiveCount
-            finalPrediction[1] = finalPrediction[1] / positiveCount
+                    targetModel = testRegressionModels[targetStripIndex]
+                    targetFrameData = testDataSets[targetStripIndex][frame]
+                    prediction = targetModel.predict([targetFrameData])
 
-            positionPrediction[frame][0] = finalPrediction[0]
-            positionPrediction[frame][1] = finalPrediction[1]
+                    #Store prediction
+                    finalPrediction[0] = finalPrediction[0] + prediction[0][0]
+                    finalPrediction[1] = finalPrediction[1] + prediction[0][1]
+
+                #Calulate mean value
+                finalPrediction[0] = finalPrediction[0] / positiveCount
+                finalPrediction[1] = finalPrediction[1] / positiveCount
+
+                positionPrediction[frame][0] = finalPrediction[0]
+                positionPrediction[frame][1] = finalPrediction[1]
+
+            #Predictions are too far away, so we use the pre prediction
+            else:
+                #TODO caluclate closest to prev
+                positionPrediction[frame][0] = positionPrediction[frame - 1][0]
+                positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+
             print(" predicted " + str(positionPrediction[frame]))
+
+            lastPositiveStrip = None
+
+            predictedCaseThree = predictedCaseThree + 1
+
+    #Run over all predictions and fill zero values with mean between previous and next frame
+    #TODO handle if multiple successively frames are zero (interpolate)
+    for frame in range(len(positionPrediction)):
+        if positionPrediction[frame][0] == 0 and positionPrediction[frame][1] == 0 and frame != 0 and frame != 3412:
+
+            #If next frame is also zero, we just copy the prev frame
+            if positionPrediction[frame + 1][0] == 0 and positionPrediction[frame + 1][1] == 0:
+                positionPrediction[frame][0] = positionPrediction[frame - 1][0]
+                positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+            else:
+                positionPrediction[frame][0] = (positionPrediction[frame - 1][0] + positionPrediction[frame + 1][0]) / 2
+                positionPrediction[frame][1] = (positionPrediction[frame - 1][1] + positionPrediction[frame + 1][1]) / 2
+
+            print("Filled frame {:04d}".format(frame) + " \t with " + str(positionPrediction[frame]))
+
+
+    print("Prediction result")
+    print("case 1 " + str(predictedCaseOne))
+    print("case 2 " + str(predictedCaseTwo))
+    print("case 3 " + str(predictedCaseThree))
 
     savePrediction(positionPrediction)
 
