@@ -187,6 +187,7 @@ def main():
         positiveCount = np.count_nonzero(framePrediction == 1)
         if positiveCount == 1:
             #Case 1
+            #Check if position is realistic
             #Predict position with regressor on only one strip
             print(" case 1", end = '', flush=True)
             targetStripIndices = np.where(framePrediction == 1)
@@ -208,15 +209,41 @@ def main():
             #Case 2
             print(" case 2", end = '', flush=True)
             #TODO just use prev prediction
+
+            #Predict next frame and calculate mean
+
             positionPrediction[frame][0] = positionPrediction[frame - 1][0]
             positionPrediction[frame][1] = positionPrediction[frame - 1][1]
             print(" predicted " + str(positionPrediction[frame]))
         elif positiveCount > 1:
             #Case 3
             print(" case 3", end = '', flush=True)
-            #TODO just use prev prediction
-            positionPrediction[frame][0] = positionPrediction[frame - 1][0]
-            positionPrediction[frame][1] = positionPrediction[frame - 1][1]
+
+            #If the predictions are far apart, we only use the prediction that is closer to prev prediction
+            #TODO
+
+            #Predict for all positive results and calculate mean.
+            targetStripIndices = np.where(framePrediction == 1)
+            finalPrediction = np.zeros((2), dtype=np.float64)
+            for arrayIndex in range(len(targetStripIndices[0])):
+                #print("index " + str(targetStripIndices[0][arrayIndex]))
+
+                targetStripIndex = (int(targetStripIndices[0][arrayIndex])) + 1
+
+                targetModel = testRegressionModels[targetStripIndex]
+                targetFrameData = testDataSets[targetStripIndex][frame]
+                prediction = targetModel.predict([targetFrameData])
+
+                #Store prediction
+                finalPrediction[0] = finalPrediction[0] + prediction[0][0]
+                finalPrediction[1] = finalPrediction[1] + prediction[0][1]
+
+            #Calulate mean value
+            finalPrediction[0] = finalPrediction[0] / positiveCount
+            finalPrediction[1] = finalPrediction[1] / positiveCount
+
+            positionPrediction[frame][0] = finalPrediction[0]
+            positionPrediction[frame][1] = finalPrediction[1]
             print(" predicted " + str(positionPrediction[frame]))
 
     savePrediction(positionPrediction)
